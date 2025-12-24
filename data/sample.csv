@@ -1,0 +1,6 @@
+id,name,value,description
+1,Sample Record A,100.5,This is a sample record from CSV
+2,Sample Record B,200.75,Another sample record with data
+3,Sample Record C,150.25,Third sample CSV record
+4,Sample Record D,300.0,Fourth sample record
+5,Sample Record E,250.5,Fifth sample record

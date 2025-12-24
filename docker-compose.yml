@@ -27,6 +27,7 @@ services:
       ETL_INTERVAL: 3600
       LOG_LEVEL: INFO
       API_HOST: http://jsonplaceholder.typicode.com
+      CSV_PATH: /app/data/sample.csv
     ports:
       - "8000:8000"
     depends_on:
@@ -34,7 +35,5 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-    command: python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-volumes:
-  postgres_data:
+    # Production-ready command without --reload
+    command: python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000

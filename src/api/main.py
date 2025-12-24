@@ -7,7 +7,7 @@ from typing import Optional
 import uuid
 
 from src.core.database import Database
-from src.core.config import LOG_LEVEL, API_HOST, CSV_URL, API_KEY
+from src.core.config import LOG_LEVEL, API_HOST, CSV_PATH, API_KEY
 from src.core.logger import setup_logging
 from src.schemas.models import DataRecord, PaginatedResponse, HealthResponse, StatsResponse
 from src.schemas.models import CreateDataRequest
@@ -44,7 +44,7 @@ async def startup():
     def _initial_etl():
         try:
             headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
-            etl_pipeline.run(f"{API_HOST}/posts", CSV_URL, headers)
+            etl_pipeline.run(f"{API_HOST}/posts", CSV_PATH, headers)
             logger.info("Initial ETL completed")
         except Exception as e:
             logger.error(f"Initial ETL failed: {e}")
@@ -98,32 +98,32 @@ async def get_data(
     logger.info(f"[{request_id}] GET /data - page={page}, page_size={page_size}, source={source}, search={search}")
     
     try:
-        # Build query
+        # Build query using parameterized statements to prevent SQL injection
         where_clauses = []
         params = []
         
         if source:
-            where_clauses.append("source = ?")
+            where_clauses.append("source = %s")
             params.append(source)
         
         if search:
-            where_clauses.append("(name LIKE ? OR description LIKE ?)")
+            where_clauses.append("(name ILIKE %s OR description ILIKE %s)")
             params.extend([f"%{search}%", f"%{search}%"])
         
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
         
-        # Get total count
+        # Get total count using parameterized query
         count_query = f"SELECT COUNT(*) as total FROM normalized_data {where_clause}"
         count_result = Database.execute_query(count_query, tuple(params))
         total = count_result[0]['total'] if count_result else 0
         
-        # Get paginated data
+        # Get paginated data using parameterized query
         offset = (page - 1) * page_size
         data_query = f"""
             SELECT * FROM normalized_data 
             {where_clause}
             ORDER BY updated_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT %s OFFSET %s
         """
         params.extend([page_size, offset])
         results = Database.execute_query(data_query, tuple(params))
@@ -208,7 +208,7 @@ async def trigger_etl(background: BackgroundTasks):
     def _run():
         try:
             headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
-            etl_pipeline.run(f"{API_HOST}/posts", CSV_URL, headers)
+            etl_pipeline.run(f"{API_HOST}/posts", CSV_PATH, headers)
             logger.info(f"Manual ETL {run_id} completed")
         except Exception as e:
             logger.error(f"Manual ETL {run_id} failed: {e}")

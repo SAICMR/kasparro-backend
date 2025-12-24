@@ -1,22 +1,24 @@
-import sqlite3
-from typing import Optional
+import os
 import logging
+import sqlite3
+from typing import Optional, Dict, List
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
 class Database:
-    """SQLite database connection for local development"""
+    """SQLite database for local development (Docker fallback)"""
     
     _connection: Optional[sqlite3.Connection] = None
     
     @classmethod
     def initialize(cls):
-        """Initialize SQLite database"""
+        """Initialize SQLite database for local development"""
         try:
-            cls._connection = sqlite3.connect('etl_local.db', check_same_thread=False)
+            db_path = os.path.join(os.getcwd(), "etl_local.db")
+            cls._connection = sqlite3.connect(db_path, check_same_thread=False)
             cls._connection.row_factory = sqlite3.Row
-            logger.info("SQLite database initialized at etl_local.db")
+            logger.info(f"SQLite database initialized at {db_path}")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
             raise
@@ -43,21 +45,14 @@ class Database:
             return False
     
     @classmethod
-    def _convert_query(cls, query: str) -> str:
-        """Convert PostgreSQL query syntax to SQLite syntax"""
-        # Handle multiline - collapse whitespace while preserving structure
-        import re
-        # First, normalize whitespace
-        query = re.sub(r'\s+', ' ', query.strip())
-        # Replace %s with ?
-        query = query.replace('%s', '?')
-        return query
-    
-    @classmethod
-    def execute_query(cls, query: str, params: tuple = None) -> list:
+    def execute_query(cls, query: str, params: tuple = None) -> List[Dict]:
         """Execute a query and return results"""
         try:
-            query = cls._convert_query(query)
+            # Convert PostgreSQL %s to SQLite ?
+            query = query.replace('%s', '?')
+            # Convert ILIKE to LIKE for SQLite (case insensitive already in SQLite)
+            query = query.replace('ILIKE', 'LIKE')
+            
             with cls.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(query, params or ())
@@ -72,7 +67,12 @@ class Database:
     def execute_update(cls, query: str, params: tuple = None) -> int:
         """Execute an update/insert/delete and return affected rows"""
         try:
-            query = cls._convert_query(query)
+            # Convert PostgreSQL %s to SQLite ?
+            query = query.replace('%s', '?')
+            # Convert ON CONFLICT to SQLite syntax
+            query = query.replace('ON CONFLICT (source, source_id) DO UPDATE SET', 'ON CONFLICT(source, source_id) DO UPDATE SET')
+            query = query.replace('ON CONFLICT (source) DO UPDATE SET', 'ON CONFLICT(source) DO UPDATE SET')
+            
             with cls.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(query, params or ())
@@ -90,4 +90,5 @@ class Database:
         if cls._connection:
             cls._connection.close()
             cls._connection = None
+
 

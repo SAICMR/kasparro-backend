@@ -3,8 +3,9 @@ from typing import Optional, List
 from datetime import datetime
 
 class DataRecord(BaseModel):
-    """Unified schema for all ingested data"""
+    """Unified schema for all ingested data with deduplication support"""
     id: Optional[int] = None
+    canonical_id: Optional[str] = None  # For identity unification across sources
     source: str
     source_id: str
     name: str
