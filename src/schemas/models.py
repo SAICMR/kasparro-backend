@@ -57,7 +57,7 @@ class CreateDataRequest(BaseModel):
     description: Optional[str] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "source": "api",
                 "source_id": "123",

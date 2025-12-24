@@ -39,10 +39,17 @@ async def startup():
     Database.initialize()
     etl_pipeline.initialize_schema()
     
-    # Run initial ETL
-    logger.info("Running initial ETL pipeline")
-    headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
-    etl_pipeline.run(f"{API_HOST}/posts", CSV_URL, headers)
+    # Run initial ETL asynchronously so startup doesn't block deployments
+    logger.info("Scheduling initial ETL pipeline (non-blocking)")
+    def _initial_etl():
+        try:
+            headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+            etl_pipeline.run(f"{API_HOST}/posts", CSV_URL, headers)
+            logger.info("Initial ETL completed")
+        except Exception as e:
+            logger.error(f"Initial ETL failed: {e}")
+
+    threading.Thread(target=_initial_etl, daemon=True).start()
 
 @app.on_event("shutdown")
 async def shutdown():
