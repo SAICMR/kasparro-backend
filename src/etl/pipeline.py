@@ -144,8 +144,9 @@ class ETLPipeline:
             
             # Check if file exists, if not use default fallback
             if not os.path.exists(csv_path):
-                logger.warning(f"CSV file not found at {csv_path}, creating sample data")
-                return self._create_sample_csv_data()
+                # For security and auditability we require a local file and fail fast
+                logger.error(f"CSV file not found at {csv_path}")
+                raise FileNotFoundError(f"Local file not found at {csv_path}")
             
             with open(csv_path, 'r', encoding='utf-8') as f:
                 csv_reader = csv.DictReader(f)

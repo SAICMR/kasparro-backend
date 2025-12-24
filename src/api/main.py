@@ -98,35 +98,36 @@ async def get_data(
     logger.info(f"[{request_id}] GET /data - page={page}, page_size={page_size}, source={source}, search={search}")
     
     try:
-        # Build query using parameterized statements to prevent SQL injection
+        # Build query using named parameters to prevent SQL injection
         where_clauses = []
-        params = []
-        
+        params = {}
+
         if source:
-            where_clauses.append("source = %s")
-            params.append(source)
-        
+            where_clauses.append("source = :source")
+            params['source'] = source
+
         if search:
-            where_clauses.append("(name ILIKE %s OR description ILIKE %s)")
-            params.extend([f"%{search}%", f"%{search}%"])
-        
+            where_clauses.append("(name ILIKE :search OR description ILIKE :search)")
+            params['search'] = f"%{search}%"
+
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-        
+
         # Get total count using parameterized query
         count_query = f"SELECT COUNT(*) as total FROM normalized_data {where_clause}"
-        count_result = Database.execute_query(count_query, tuple(params))
+        count_result = Database.execute_query(count_query, params)
         total = count_result[0]['total'] if count_result else 0
-        
+
         # Get paginated data using parameterized query
         offset = (page - 1) * page_size
         data_query = f"""
             SELECT * FROM normalized_data 
             {where_clause}
             ORDER BY updated_at DESC
-            LIMIT %s OFFSET %s
+            LIMIT :limit OFFSET :offset
         """
-        params.extend([page_size, offset])
-        results = Database.execute_query(data_query, tuple(params))
+        params['limit'] = page_size
+        params['offset'] = offset
+        results = Database.execute_query(data_query, params)
         
         # Convert to Pydantic models
         data_records = [DataRecord(**record) for record in results]
@@ -241,36 +242,32 @@ async def create_data(record: CreateDataRequest):
     """Create or upsert a normalized data record"""
     try:
         now = datetime.now()
-        # Use INSERT OR REPLACE to honor UNIQUE(source, source_id)
+
+        # Use Postgres upsert pattern with named parameters and RETURNING *
         insert_query = """
-            INSERT OR REPLACE INTO normalized_data
-            (id, source, source_id, name, value, description, created_at, updated_at)
-            VALUES (
-                (SELECT id FROM normalized_data WHERE source = ? AND source_id = ?),
-                ?, ?, ?, ?, ?, ?, ?
-            )
+            INSERT INTO normalized_data
+            (canonical_id, source, source_id, name, value, description, created_at, updated_at)
+            VALUES (:canonical_id, :source, :source_id, :name, :value, :description, :created_at, :updated_at)
+            ON CONFLICT (source, source_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                value = EXCLUDED.value,
+                description = EXCLUDED.description,
+                updated_at = EXCLUDED.updated_at
+            RETURNING *
         """
 
-        params = (
-            record.source,
-            record.source_id,
-            record.source,
-            record.source_id,
-            record.name,
-            record.value,
-            record.description or "",
-            now,
-            now,
-        )
+        params = {
+            'canonical_id': None,
+            'source': record.source,
+            'source_id': record.source_id,
+            'name': record.name,
+            'value': record.value,
+            'description': record.description or "",
+            'created_at': now,
+            'updated_at': now,
+        }
 
-        self_db = Database
-        self_db.execute_update(insert_query, params)
-
-        # Return the created/updated record
-        res = Database.execute_query(
-            "SELECT * FROM normalized_data WHERE source = ? AND source_id = ?",
-            (record.source, record.source_id)
-        )
+        res = Database.execute_query(insert_query, params)
         if not res:
             raise HTTPException(status_code=500, detail="Failed to create record")
         return DataRecord(**res[0])
